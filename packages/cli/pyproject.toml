@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "audiorise-cli"
-version = "0.2.0"
-description = "AudioRise CLI: `audiorise` command (probe + separate)"
+version = "0.3.0"
+description = "AudioRise CLI: `audiorise` command (probe + separate + label)"
 requires-python = ">=3.10"
 dependencies = ["audiorise-core"]
 license = { text = "MIT" }

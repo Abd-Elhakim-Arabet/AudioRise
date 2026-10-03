@@ -1,4 +1,4 @@
-"""`audiorise` CLI — Increment 2: `probe` + `separate` (local Demucs) live."""
+"""`audiorise` CLI — Increment 3: `probe` + `separate` + `label` live."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 
-from audio_engine import __version__, probe_audio
+from audio_engine import __version__, label_stems, probe_audio
 from audio_engine.separate import SeparationNotAvailable, separate
 
 
@@ -30,7 +30,12 @@ def _cmd_probe(args: argparse.Namespace) -> int:
 def _cmd_separate(args: argparse.Namespace) -> int:
     try:
         result = separate(
-            args.input, outdir=args.outdir, model=args.model, device=args.device
+            args.input,
+            outdir=args.outdir,
+            model=args.model,
+            device=args.device,
+            label=args.label,
+            top_k=args.top_k,
         )
     except SeparationNotAvailable as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -50,8 +55,28 @@ def _cmd_separate(args: argparse.Namespace) -> int:
     else:
         print(f"wrote {len(result['stems'])} stems -> {args.outdir}/")
         for s in result["stems"]:
-            print(f"  {s['name']}.wav  {s['rms_db']} dB")
+            tags = ""
+            if result.get("labels", {}).get(s["name"]):
+                tags = "  [" + ", ".join(
+                    f"{t['label']}:{t['score']}" for t in result["labels"][s["name"]]
+                ) + "]"
+            print(f"  {s['name']}.wav  {s['rms_db']} dB{tags}")
         print(f"  {result['stems_json']}")
+    return 0
+
+
+def _cmd_label(args: argparse.Namespace) -> int:
+    try:
+        labels = label_stems(args.stems_dir, top_k=args.top_k)
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(labels, indent=2))
+    else:
+        for stem, tags in sorted(labels.items()):
+            desc = ", ".join(f"{t['label']}:{t['score']}" for t in tags) or "(silent/unsure)"
+            print(f"  {stem}: {desc}")
     return 0
 
 
@@ -70,8 +95,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--outdir", default="stems", help="output dir (default: stems/)")
     s.add_argument("--model", default="htdemucs", help="separator model (default: htdemucs)")
     s.add_argument("--device", default=None, help="cpu/cuda (default: auto)")
+    s.add_argument("--label", action="store_true", help="also tag stems (Increment 3 heuristic)")
+    s.add_argument("--top-k", type=int, default=2, help="tags per stem (default: 2)")
     s.add_argument("--json", action="store_true", help="machine-readable output")
     s.set_defaults(func=_cmd_separate)
+
+    lb = sub.add_parser("label", help="tag stems in a dir (heuristic, best-effort)")
+    lb.add_argument("stems_dir", help="dir with vocals/drums/bass/other.wav (+ stems.json)")
+    lb.add_argument("--top-k", type=int, default=2, help="tags per stem (default: 2)")
+    lb.add_argument("--json", action="store_true", help="machine-readable output")
+    lb.set_defaults(func=_cmd_label)
     return ap
 
 

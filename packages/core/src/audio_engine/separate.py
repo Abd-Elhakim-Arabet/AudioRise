@@ -105,6 +105,8 @@ def separate(
     outdir: str | Path = "stems",
     model: str = "htdemucs",
     device: str | None = None,
+    label: bool = False,
+    top_k: int = 2,
 ) -> dict:
     _require_torch()
     import torch
@@ -144,7 +146,16 @@ def separate(
         "sample_rate": sr,
         "stems": sorted(stems, key=lambda s: s["name"]),
         "stems_json": str(out / "stems.json"),
-        "labels": {},  # reserved for Increment 3
+        "labels": {},
     }
-    Path(result["stems_json"]).write_text(json.dumps(result, indent=2))
+    if label:
+        from .labels import label_stems
+
+        # Write unlabeled manifest first so label_stems() can merge into it,
+        # then re-read so disk and returned dict agree.
+        Path(result["stems_json"]).write_text(json.dumps(result, indent=2))
+        result["labels"] = label_stems(out, top_k=top_k)
+        result = json.loads(Path(result["stems_json"]).read_text())
+    else:
+        Path(result["stems_json"]).write_text(json.dumps(result, indent=2))
     return result

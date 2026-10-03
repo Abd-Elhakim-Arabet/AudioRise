@@ -1,11 +1,17 @@
-"""AudioRise core engine.
+"""AudioRise core engine — probe + separate + labels (all live)."""
 
-Increment 1: `probe_audio` is live (ffprobe, stdlib only).
-`separate` / labels are stubs — Increment 2/3 fill them in.
-"""
-
+from .labels import FINE_LABELS, label_stem, label_stems
 from .probe import probe_audio
 from .separate import EXPECTED_STEMS, SeparationNotAvailable, separate
 
-__all__ = ["probe_audio", "separate", "SeparationNotAvailable", "EXPECTED_STEMS", "__version__"]
-__version__ = "0.2.0"
+__all__ = [
+    "probe_audio",
+    "separate",
+    "SeparationNotAvailable",
+    "EXPECTED_STEMS",
+    "FINE_LABELS",
+    "label_stem",
+    "label_stems",
+    "__version__",
+]
+__version__ = "0.3.0"
