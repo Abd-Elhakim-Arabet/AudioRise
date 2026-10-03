@@ -133,3 +133,17 @@ def test_transcribe_stems_mocked(tmp_path, monkeypatch):
     assert progs == {"vocals": 52, "bass": 33, "other": 73}
     meta = json.loads((d / "stems.json").read_text())
     assert meta["midi"]["midi_path"].endswith("Song.mid")
+
+
+def test_family_first_for_known_stems():
+    import importlib
+
+    tr = importlib.import_module("audio_engine.transcribe")
+    # drums stem mislabeled [speech, piano] must still go to channel 10.
+    bad = {"drums": [{"label": "speech", "score": 0.7},
+                     {"label": "piano", "score": 0.4}]}
+    assert tr._condition_for("drums", bad) == ["drums"]
+    assert tr._program_for("drums", bad) == (0, True)
+    assert tr._condition_for("vocals", {}) == ["voice"]
+    assert tr._program_for("vocals", {}) == (52, False)
+    assert tr._condition_for("other", {}) is None

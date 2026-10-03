@@ -169,29 +169,37 @@ def count_notes(midi_bytes: bytes) -> int:
     )
 
 
+# Demucs stem family → conditioning groups. Family wins over heuristic tags:
+# separation is far more reliable than our Inc3 guesser (e.g. a drums stem
+# mislabeled [speech, piano] must still be conditioned on drums).
+FAMILY_CONDITION: dict[str, list[str]] = {
+    "vocals": ["voice"],
+    "drums": ["drums"],
+    "bass": ["electric_bass"],
+}
+
+
 def _condition_for(stem: str, labels: dict) -> list[str] | None:
+    if stem in FAMILY_CONDITION:
+        return FAMILY_CONDITION[stem]
     tags = labels.get(stem, []) if labels else []
     groups = [LABEL_TO_MUSCRIPTOR.get(t["label"]) for t in tags]
     groups = [g for g in groups if g]
-    # Fall back to the Demucs stem family's best guess when heuristic is unsure.
-    if not groups:
-        groups = {
-            "vocals": ["voice"],
-            "drums": ["drums"],
-            "bass": ["electric_bass"],
-            "other": [],
-        }.get(stem, [])
     return groups or None
 
 
 def _program_for(stem: str, labels: dict) -> tuple[int, bool]:
+    if stem == "drums":
+        return 0, True  # channel 10, always — never trust tags here
+    if stem == "vocals":
+        return 52, False
     tags = labels.get(stem, []) if labels else []
     for t in tags:
         if t["label"] == "speech":
             continue
         if t["label"] in LABEL_TO_GM:
             return LABEL_TO_GM[t["label"]], t["label"] == "drums"
-    return {"vocals": 52, "drums": 0, "bass": 33}.get(stem, 0), stem == "drums"
+    return {"bass": 33}.get(stem, 0), False
 
 
 def transcribe_stems(
