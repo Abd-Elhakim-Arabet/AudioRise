@@ -33,7 +33,7 @@ def test_separate_tool_outdir_and_jail(tmp_path, monkeypatch):
     tone = _tone(tmp_path / "mix.wav")
     calls = {}
 
-    def fake_separate(path, outdir, model, label=False, top_k=2):
+    def fake_separate(path, outdir, model, label=False, top_k=2, **kwargs):
         calls.update(path=str(path), outdir=str(outdir), model=model, label=label)
         return {"stems": [], "stems_json": str(outdir / "stems.json")}
 

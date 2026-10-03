@@ -7,10 +7,19 @@ dist/
 build/
 out/
 stems/
+*-stems/
 *.wav
 *.mp3
 *.flac
 *.ogg
+*.mid
+*.midi
+# model weights / checkpoints (downloaded, never commit)
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+.mt3_checkpoints/
 .DS_Store
 pytest_cache/
 .mypy_cache/

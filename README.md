@@ -4,7 +4,8 @@ Audio-to-stems pipeline — one engine, three doors: a **CLI**, a **Python API**
 and an **MCP server** for AI agents. No website, by design.
 
 ```
-song.mp3 → probe → separate (local Demucs) → stems/*.wav (+ stems.json) → label
+song.mp3 → probe → separate (local Demucs) → stems/*.wav (+ stems.json)
+                                              → label → transcribe → song.mid
 ```
 
 Stems are plain WAVs: drag the folder into **FL Studio / Audacity / Reaper / Ableton**,
@@ -69,9 +70,9 @@ stems/
 ## Repo layout
 
 ```
-packages/core/src/audio_engine/   the engine (probe + separate + labels, all live)
-packages/core/tests/              core test-suite (probe + separate + labels)
-packages/cli/src/audio_cli/       `audiorise` command (probe + separate + label)
+packages/core/src/audio_engine/   the engine (probe + separate + labels + transcribe)
+packages/core/tests/              core test-suite (probe + separate + labels + transcribe)
+packages/cli/src/audio_cli/       `audiorise` command (probe + separate + label + transcribe)
 packages/mcp-server/              MCP server + per-client install scripts
 ```
 
@@ -87,12 +88,39 @@ packages/mcp-server/              MCP server + per-client install scripts
 - [x] **Inc 4:** MCP server (`probe_audio`, `separate_audio`, `label_stems`,
       `summarize_stems`) jailed to `AUDIORISE_MCP_ROOTS`, verified in-process
       (tool list + probe/summarize JSON + jail rejection).
-- [x] **Inc 5 (this):** `label` accepts one `.wav` or a dir; `separate` defaults to
+- [x] **Inc 5:** `label` accepts one `.wav` or a dir; `separate` defaults to
       `<song>-stems/` next to the input (e.g. `Premier-Night-stems/`).
+- [x] **Inc 6 (this):** `transcribe` — MuScriptor audio→MIDI per stem, conditioned
+      on Inc3 labels (verified taxonomy), merged multitrack `.mid` (GM programs,
+      drums on ch.10) + WAVs kept. `separate --midi`, MCP `transcribe_audio`.
+      Logic fully tested with mocked inference; **live inference needs you to
+      unblock the gated weights (3 steps below) — not yet run on a real song.**
+
+## Transcribe to MIDI (`audiorise transcribe`)
+
+```bash
+pip install -e "packages/core[transcription]"   # muscriptor + mido (code is MIT)
+audiorise transcribe stems/ --model-size small            # → stems/<song>.mid
+audiorise transcribe stems/other.wav                      # one stem → other.mid
+audiorise separate song.mp3 --label --midi                # full pipeline at once
+```
+
+One track per instrument with General MIDI programs, drums on channel 10 —
+drop the `.mid` into FL Studio and move notes in the piano roll. Silent stems
+and speech stay audio-only (speech has no notes). Transcription is a
+best-effort guess: clean pitched instruments come out well, dense/FX-heavy
+mixes need cleanup.
+
+> **Gated weights (one-time, on your side):** MuScriptor weights are CC BY-NC 4.0
+> (non-commercial) and need a free HF account:
+> 1. Accept the license at `huggingface.co/MuScriptor/muscriptor-small`
+> 2. `hf auth login` (or `export HF_TOKEN=hf_...`)
+> 3. Re-run — weights cache locally, then fully offline.
+> Until then every transcribe command exits 3 with these steps.
 
 ## MCP server (`packages/mcp-server/`)
 
-`audiorise` MCP server (official SDK v2, stdio) with four tools returning JSON.
+`audiorise` MCP server (official SDK v2, stdio) with five tools returning JSON.
 Paths are jailed to `AUDIORISE_MCP_ROOTS` (default: repo root + tmp). Details in
 [`packages/mcp-server/README.md`](packages/mcp-server/README.md).
 

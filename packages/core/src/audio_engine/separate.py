@@ -122,6 +122,9 @@ def separate(
     device: str | None = None,
     label: bool = False,
     top_k: int = 2,
+    midi: bool = False,
+    midi_model: str = "small",
+    midi_condition: bool = True,
 ) -> dict:
     _require_torch()
     import torch
@@ -162,15 +165,24 @@ def separate(
         "stems": sorted(stems, key=lambda s: s["name"]),
         "stems_json": str(out / "stems.json"),
         "labels": {},
+        "midi": None,
     }
+    # Write manifest first so label/transcribe steps can merge into it,
+    # then re-read so disk and returned dict agree.
+    Path(result["stems_json"]).write_text(json.dumps(result, indent=2))
     if label:
         from .labels import label_stems
 
-        # Write unlabeled manifest first so label_stems() can merge into it,
-        # then re-read so disk and returned dict agree.
-        Path(result["stems_json"]).write_text(json.dumps(result, indent=2))
         result["labels"] = label_stems(out, top_k=top_k)
         result = json.loads(Path(result["stems_json"]).read_text())
+    if midi:
+        from .transcribe import transcribe_stems
+
+        midi_result = transcribe_stems(
+            out, model_size=midi_model, condition=midi_condition, device=device
+        )
+        result = json.loads(Path(result["stems_json"]).read_text())
+        result["midi"] = midi_result
     else:
         Path(result["stems_json"]).write_text(json.dumps(result, indent=2))
     return result

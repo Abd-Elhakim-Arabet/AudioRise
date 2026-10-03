@@ -1,4 +1,4 @@
-"""`audiorise` CLI — Increment 3: `probe` + `separate` + `label` live."""
+"""`audiorise` CLI — probe + separate + label + transcribe live."""
 
 from __future__ import annotations
 
@@ -7,7 +7,12 @@ import json
 import sys
 
 from audio_engine import __version__, label_path, probe_audio
-from audio_engine.separate import SeparationNotAvailable, default_outdir, separate
+from audio_engine.separate import SeparationNotAvailable, separate
+from audio_engine.transcribe import (
+    MODEL_SIZES,
+    TranscriptionNotAvailable,
+    transcribe_stems,
+)
 
 
 def _cmd_probe(args: argparse.Namespace) -> int:
@@ -36,6 +41,9 @@ def _cmd_separate(args: argparse.Namespace) -> int:
             device=args.device,
             label=args.label,
             top_k=args.top_k,
+            midi=args.midi,
+            midi_model=args.midi_model,
+            midi_condition=not args.no_condition,
         )
     except SeparationNotAvailable as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -43,6 +51,9 @@ def _cmd_separate(args: argparse.Namespace) -> int:
             "Install with: pip install -e packages/core[separation]",
             file=sys.stderr,
         )
+        return 3
+    except TranscriptionNotAvailable as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 3
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -62,7 +73,12 @@ def _cmd_separate(args: argparse.Namespace) -> int:
                     f"{t['label']}:{t['score']}" for t in result["labels"][s["name"]]
                 ) + "]"
             print(f"  {s['name']}.wav  {s['rms_db']} dB{tags}")
+        if result.get("midi"):
+            for t in result["midi"]["tracks"]:
+                print(f"  {t['name']}: {t['notes']} notes (GM {t['program']})")
         print(f"  {result['stems_json']}")
+        if result.get("midi"):
+            print(f"  {result['midi']['midi_path']}")
     return 0
 
 
@@ -81,8 +97,57 @@ def _cmd_label(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_transcribe(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from audio_engine.transcribe import count_notes, transcribe_file
+
+    try:
+        p = Path(args.path)
+        if p.is_file():
+            midi_bytes = transcribe_file(
+                p,
+                model_size=args.model_size,
+                instruments=None,
+                device=args.device,
+            )
+            out = Path(args.out) if args.out else p.with_suffix(".mid")
+            out.write_bytes(midi_bytes)
+            result = {
+                "midi_path": str(out),
+                "tracks": [{"name": p.stem, "notes": count_notes(midi_bytes)}],
+            }
+        elif p.is_dir():
+            result = transcribe_stems(
+                p,
+                model_size=args.model_size,
+                condition=not args.no_condition,
+                device=args.device,
+            )
+            if args.out and args.out != result["midi_path"]:
+                Path(result["midi_path"]).rename(args.out)
+                result["midi_path"] = args.out
+        else:
+            print(f"error: file or dir not found: {p}", file=sys.stderr)
+            return 2
+    except TranscriptionNotAvailable as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        print(f"transcription failed: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"wrote {result['midi_path']}")
+        for t in result["tracks"]:
+            extra = f" (GM {t['program']})" if "program" in t else ""
+            print(f"  {t['name']}: {t['notes']} notes{extra}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="audiorise", description="AudioRise: audio → stems")
+    ap = argparse.ArgumentParser(prog="audiorise", description="AudioRise: audio → stems + MIDI")
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -100,8 +165,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--model", default="htdemucs", help="separator model (default: htdemucs)")
     s.add_argument("--device", default=None, help="cpu/cuda (default: auto)")
-    s.add_argument("--label", action="store_true", help="also tag stems (Increment 3 heuristic)")
+    s.add_argument("--label", action="store_true", help="also tag stems (heuristic)")
     s.add_argument("--top-k", type=int, default=2, help="tags per stem (default: 2)")
+    s.add_argument(
+        "--midi",
+        action="store_true",
+        help="also transcribe stems → multitrack MIDI (needs HF-gated MuScriptor)",
+    )
+    s.add_argument(
+        "--midi-model",
+        default="small",
+        choices=list(MODEL_SIZES),
+        help="MuScriptor size (default: small)",
+    )
+    s.add_argument(
+        "--no-condition",
+        action="store_true",
+        help="don't condition transcription on instrument labels",
+    )
     s.add_argument("--json", action="store_true", help="machine-readable output")
     s.set_defaults(func=_cmd_separate)
 
@@ -110,6 +191,24 @@ def build_parser() -> argparse.ArgumentParser:
     lb.add_argument("--top-k", type=int, default=2, help="tags per stem (default: 2)")
     lb.add_argument("--json", action="store_true", help="machine-readable output")
     lb.set_defaults(func=_cmd_label)
+
+    t = sub.add_parser("transcribe", help="stems/wav → multitrack MIDI (MuScriptor)")
+    t.add_argument("path", help="stem .wav file or stems dir")
+    t.add_argument(
+        "--model-size",
+        default="small",
+        choices=list(MODEL_SIZES),
+        help="MuScriptor size (default: small)",
+    )
+    t.add_argument("--device", default=None, help="cpu/cuda/mps (default: auto)")
+    t.add_argument(
+        "--no-condition",
+        action="store_true",
+        help="don't condition on Inc3 instrument labels",
+    )
+    t.add_argument("--out", default=None, help="output .mid path (default: next to input)")
+    t.add_argument("--json", action="store_true", help="machine-readable output")
+    t.set_defaults(func=_cmd_transcribe)
     return ap
 
 
