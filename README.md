@@ -1,127 +1,120 @@
 # AudioRise
 
-Audio-to-stems pipeline — one engine, three doors: a **CLI**, a **Python API**,
-and an **MCP server** for AI agents. No website, by design.
+Feed it a song, get back **stems you can mix** and **notes you can edit** — one
+engine, three doors: a **CLI**, a **Python API**, and an **MCP server** for AI
+agents. No website, by design. Fully local after the first model download.
 
 ```
-song.mp3 → probe → separate (local Demucs) → stems/*.wav (+ stems.json)
-                                              → label → transcribe → song.mid
+song.mp3 → probe → separate (Demucs) → stems/*.wav (+ stems.json)
+                                     → label   → instrument tags
+                                     → transcribe (MuScriptor) → song.mid
 ```
 
-Stems are plain WAVs: drag the folder into **FL Studio / Audacity / Reaper / Ableton**,
-each stem on its own track. Speech and singing share the `vocals` stem (per spec).
-Fine-grained tags (flute, piano, …) are best-effort **labels on top of the 4 proven
-stems** — true flute-vs-violin from a finished mix is unsolved, so we keep the proven
-stems and *label*, never invent, extra stems.
-
-Live status: **Increment 3 — `probe` + `separate` + `label` all live.**
+- **Stems** are plain 44.1 kHz stereo WAVs: drag them into **FL Studio / Audacity /
+  Reaper / Ableton**, one per track. Speech and singing share the `vocals` stem.
+- **Tags** are best-effort instrument labels on top of the 4 proven stems
+  (`other[flute,synth].wav` aliases + `stems.json`). True flute-vs-violin from a
+  finished mix is unsolved — we *label*, never invent, extra stems.
+- **MIDI** is one multitrack `.mid` (General MIDI programs, drums on channel 10).
+  Drop it into FL Studio and move notes in the piano roll. Speech and silence
+  stay audio-only — speech has no notes.
 
 ## Requirements
 
 - Python 3.10–3.14, `ffmpeg` + `ffprobe` on `PATH`
   (`brew install ffmpeg` on macOS, `sudo apt install ffmpeg` on Linux).
-- `probe` needs no third-party packages. `separate` needs:
-  `pip install -e packages/core[separation]` (torch + torchaudio + demucs + soundfile).
-  First run downloads the `htdemucs` model (~80 MB), then works fully offline.
+- `probe` / `label` need nothing else. Each AI stage is one extra install:
 
-## Quick start (Increment 3)
+| Stage | Install | First run |
+|---|---|---|
+| `separate` (Demucs `htdemucs`) | `pip install -e "packages/core[separation]"` | downloads ~80 MB, then offline |
+| `transcribe` (MuScriptor) | `pip install -e "packages/core[transcription]"` | gated weights, one-time login (below) |
+
+> **Gated transcription weights (once per machine):** MuScriptor weights are
+> CC BY-NC 4.0 (non-commercial) and need a free Hugging Face account:
+> 1. Accept the license at `huggingface.co/MuScriptor/muscriptor-small`
+> 2. `hf auth login` (or `export HF_TOKEN=hf_...`)
+> 3. Re-run — weights cache locally, then fully offline.
+> Until then, transcribe commands exit 3 with these steps.
+
+## Quick start
 
 ```bash
 pip install -e packages/core -e packages/cli
-pip install -e "packages/core[separation]"   # once, for separate
+pip install -e "packages/core[separation]"      # once, for separate
+pip install -e "packages/core[transcription]"  # once, for transcribe
+
 audiorise probe song.mp3
-audiorise separate song.mp3 --label          # → ./<song>-stems/ next to song.mp3
-audiorise separate song.mp3 --outdir stems/ --model htdemucs   # explicit dir
-audiorise label stems/                       # tag a stems dir
-audiorise label stems/other.wav              # tag one stem file
+audiorise separate song.mp3 --label --midi     # everything at once
 ```
 
-`label` writes per-stem tags into `stems.json` (`labels: {other: [{label, score}]}`)
-and alias symlinks like `other[flute,synth].wav` (copied if symlinks unsupported).
-Silent stems get no tags and no alias. Heuristic is numpy-only, fully local,
-no download — hints for organizing tracks in your DAW, not ground truth.
+Without `--outdir`, output goes to `<song>-stems/` next to the input
+(e.g. `Premier-Night-stems/`).
 
-### Python API (Increment 3)
+## Commands
 
-```python
-from audio_engine import probe_audio, separate, label_stems, label_stem
-info = probe_audio("song.mp3")
-result = separate("song.mp3", outdir="stems/", model="htdemucs", label=True, top_k=2)
-print(result["labels"]["other"])   # [{'label': 'flute', 'score': 0.93}, ...]
-print(label_stem("stems/other.wav"))
+```bash
+# Inspect any audio file
+audiorise probe song.mp3 [--json]
 
-`info` keys: `path, format, duration_sec, sample_rate, channels, codec, bit_rate`.
+# Split into vocals/drums/bass/other.wav + stems.json
+audiorise separate song.mp3 [--outdir DIR] [--model htdemucs] [--device cpu]
+                            [--label] [--midi] [--midi-model small|medium|large]
 
-## Output contract (stable from Increment 1)
+# Tag a stems dir or a single stem file (numpy-only heuristic, offline)
+audiorise label stems/ [--top-k 2]
+audiorise label stems/other.wav
 
-`separate()` writes:
+# Stems/wav → multitrack MIDI (MuScriptor, local)
+audiorise transcribe stems/ [--model-size small|medium|large] [--no-condition]
+audiorise transcribe stems/other.wav
+```
+
+`--no-condition` transcribes without instrument hints; by default each stem is
+conditioned on its label (known stems like drums always use their family —
+separation beats guessing). Per-stem conditioning and GM programs live in
+`stems.json` under `labels` / `midi`.
+
+## Output contract
+
+`separate song.mp3` writes (default dir `<song>-stems/`):
 
 ```
-stems/
+Premier-Night-stems/
   vocals.wav   # speech + singing, always present even if silent
   drums.wav
   bass.wav
   other.wav
-  stems.json   # probe info + model name + per-stem rms_db + fine labels (Inc 3)
+  other[flute,synth].wav   # alias to the tagged stem (label only)
+  stems.json               # probe info, model, rms_db, labels, midi
+  Premier-Night.mid        # multitrack MIDI (midi only)
 ```
 
-44.1 kHz stereo WAV — imports cleanly into FL Studio / Audacity.
+## Python API
 
-## Repo layout
+```python
+from audio_engine import probe_audio, separate, label_stems, transcribe_stems
 
-```
-packages/core/src/audio_engine/   the engine (probe + separate + labels + transcribe)
-packages/core/tests/              core test-suite (probe + separate + labels + transcribe)
-packages/cli/src/audio_cli/       `audiorise` command (probe + separate + label + transcribe)
-packages/mcp-server/              MCP server + per-client install scripts
-```
+info = probe_audio("song.mp3")
+print(info["duration_sec"], info["sample_rate"], info["channels"])
 
-## Roadmap (one increment per submit, no accumulation)
+result = separate("song.mp3", label=True, midi=True, midi_model="small")
+print(result["labels"]["other"])   # [{'label': 'flute', 'score': 0.93}, ...]
+print(result["midi"]["tracks"])    # [{'name': 'bass', 'program': 33, 'notes': 25}, ...]
 
-- [x] **Inc 1:** skeleton mirroring VectoRise, `probe`, CLI, README, tests.
-- [x] **Inc 2:** local separation — PyTorch + Demucs `htdemucs` (4 stems),
-      CPU auto (`--device cpu/cuda`), model auto-download then offline.
-      `audiorise separate` live, verified on synth mix + CLI.
-- [x] **Inc 3:** fine-grained labeling — numpy-only heuristic tags each stem
-      (`other[flute,synth].wav` aliases + `stems.json` labels), silent stems skipped.
-      `audiorise label` + `separate --label` live, verified on sine + Demucs stems.
-- [x] **Inc 4:** MCP server (`probe_audio`, `separate_audio`, `label_stems`,
-      `summarize_stems`) jailed to `AUDIORISE_MCP_ROOTS`, verified in-process
-      (tool list + probe/summarize JSON + jail rejection).
-- [x] **Inc 5:** `label` accepts one `.wav` or a dir; `separate` defaults to
-      `<song>-stems/` next to the input (e.g. `Premier-Night-stems/`).
-- [x] **Inc 6 (this):** `transcribe` — MuScriptor audio→MIDI per stem, conditioned
-      on Inc3 labels (verified taxonomy), merged multitrack `.mid` (GM programs,
-      drums on ch.10) + WAVs kept. `separate --midi`, MCP `transcribe_audio`.
-      Logic fully tested with mocked inference; **live inference needs you to
-      unblock the gated weights (3 steps below) — not yet run on a real song.**
-
-## Transcribe to MIDI (`audiorise transcribe`)
-
-```bash
-pip install -e "packages/core[transcription]"   # muscriptor + mido (code is MIT)
-audiorise transcribe stems/ --model-size small            # → stems/<song>.mid
-audiorise transcribe stems/other.wav                      # one stem → other.mid
-audiorise separate song.mp3 --label --midi                # full pipeline at once
+print(transcribe_stems("Premier-Night-stems/"))  # transcribe later, separately
 ```
 
-One track per instrument with General MIDI programs, drums on channel 10 —
-drop the `.mid` into FL Studio and move notes in the piano roll. Silent stems
-and speech stay audio-only (speech has no notes). Transcription is a
-best-effort guess: clean pitched instruments come out well, dense/FX-heavy
-mixes need cleanup.
-
-> **Gated weights (one-time, on your side):** MuScriptor weights are CC BY-NC 4.0
-> (non-commercial) and need a free HF account:
-> 1. Accept the license at `huggingface.co/MuScriptor/muscriptor-small`
-> 2. `hf auth login` (or `export HF_TOKEN=hf_...`)
-> 3. Re-run — weights cache locally, then fully offline.
-> Until then every transcribe command exits 3 with these steps.
+`probe_audio` returns `path, format, duration_sec, sample_rate, channels,
+codec, bit_rate`. `separate` returns `source, model, device, sample_rate,
+stems[{name, path, rms_db}], labels, midi, stems_json`.
 
 ## MCP server (`packages/mcp-server/`)
 
-`audiorise` MCP server (official SDK v2, stdio) with five tools returning JSON.
-Paths are jailed to `AUDIORISE_MCP_ROOTS` (default: repo root + tmp). Details in
+`audiorise` MCP server (official SDK v2, stdio): `probe_audio`,
+`separate_audio`, `label_stems`, `summarize_stems`, `transcribe_audio` —
+all returning JSON, all paths jailed to `AUDIORISE_MCP_ROOTS`
+(default: repo root + tmp). Details in
 [`packages/mcp-server/README.md`](packages/mcp-server/README.md).
 
 ```bash
@@ -136,12 +129,30 @@ sh packages/mcp-server/install-codex.sh     # → ~/.codex/config.toml
 sh packages/mcp-server/install-opencode.sh   # → ~/.config/opencode/opencode.json
 sh packages/mcp-server/install-claude.sh     # → claude mcp add (user scope)
 ```
-- [ ] **Inc 3:** fine-grained labeling — classifier tags each stem
-      (`other.wav` → `other[flute,piano].wav` style aliases + `stems.json`), best-effort.
-- [ ] **Inc 4:** MCP server (`probe_audio`, `separate_audio`) jailed to `AUDIORISE_MCP_ROOTS`.
+
+## Repo layout
+
+```
+packages/core/src/audio_engine/   the engine (probe + separate + labels + transcribe)
+packages/core/tests/              core test-suite (22 tests, mocked heavy models)
+packages/cli/src/audio_cli/       `audiorise` command
+packages/mcp-server/              MCP server + per-client install scripts
+```
+
+## History (one increment per commit)
+
+- **Inc 1:** skeleton mirroring VectoRise, live `probe`, CLI, tests.
+- **Inc 2:** local Demucs separation (`htdemucs`, CPU auto), verified on synth mix.
+- **Inc 3:** heuristic labeling (`other[flute,synth].wav` aliases + `stems.json`).
+- **Inc 4:** MCP server, jailed paths, per-client install scripts.
+- **Inc 5:** `label` takes one `.wav` or a dir; input-named default outdir.
+- **Inc 6:** MuScriptor transcription → multitrack `.mid`, verified on a real
+  song excerpt (bass 25 / drums 57 / other 27 notes); family-first conditioning
+  fix so known stems never follow a wrong heuristic tag.
 
 ## Developing
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e packages/core -e packages/cli
-.venv/bin/pytest packages/core/tests/ -q
+.venv/bin/pytest packages/core/tests/ packages/mcp-server/tests/ -q
+```
