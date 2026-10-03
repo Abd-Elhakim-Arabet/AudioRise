@@ -1,7 +1,7 @@
 # AudioRise
 
-Audio-to-stems pipeline — one engine, two doors (so far): a **CLI** and a **Python API**.
-MCP server lands in a later increment. No website, by design.
+Audio-to-stems pipeline — one engine, three doors: a **CLI**, a **Python API**,
+and an **MCP server** for AI agents. No website, by design.
 
 ```
 song.mp3 → probe → separate (local Demucs) → stems/*.wav (+ stems.json) → label
@@ -71,6 +71,7 @@ stems/
 packages/core/src/audio_engine/   the engine (probe + separate + labels, all live)
 packages/core/tests/              core test-suite (probe + separate + labels)
 packages/cli/src/audio_cli/       `audiorise` command (probe + separate + label)
+packages/mcp-server/              MCP server + per-client install scripts
 ```
 
 ## Roadmap (one increment per submit, no accumulation)
@@ -79,9 +80,31 @@ packages/cli/src/audio_cli/       `audiorise` command (probe + separate + label)
 - [x] **Inc 2:** local separation — PyTorch + Demucs `htdemucs` (4 stems),
       CPU auto (`--device cpu/cuda`), model auto-download then offline.
       `audiorise separate` live, verified on synth mix + CLI.
-- [x] **Inc 3 (this):** fine-grained labeling — numpy-only heuristic tags each stem
+- [x] **Inc 3:** fine-grained labeling — numpy-only heuristic tags each stem
       (`other[flute,synth].wav` aliases + `stems.json` labels), silent stems skipped.
       `audiorise label` + `separate --label` live, verified on sine + Demucs stems.
+- [x] **Inc 4 (this):** MCP server (`probe_audio`, `separate_audio`, `label_stems`,
+      `summarize_stems`) jailed to `AUDIORISE_MCP_ROOTS`, verified in-process
+      (tool list + probe/summarize JSON + jail rejection).
+
+## MCP server (`packages/mcp-server/`)
+
+`audiorise` MCP server (official SDK v2, stdio) with four tools returning JSON.
+Paths are jailed to `AUDIORISE_MCP_ROOTS` (default: repo root + tmp). Details in
+[`packages/mcp-server/README.md`](packages/mcp-server/README.md).
+
+```bash
+pip install -e packages/core -e packages/mcp-server
+python -m audio_mcp
+```
+
+One-command client setup (idempotent, machine-local paths auto-detected):
+
+```bash
+sh packages/mcp-server/install-codex.sh     # → ~/.codex/config.toml
+sh packages/mcp-server/install-opencode.sh   # → ~/.config/opencode/opencode.json
+sh packages/mcp-server/install-claude.sh     # → claude mcp add (user scope)
+```
 - [ ] **Inc 3:** fine-grained labeling — classifier tags each stem
       (`other.wav` → `other[flute,piano].wav` style aliases + `stems.json`), best-effort.
 - [ ] **Inc 4:** MCP server (`probe_audio`, `separate_audio`) jailed to `AUDIORISE_MCP_ROOTS`.
