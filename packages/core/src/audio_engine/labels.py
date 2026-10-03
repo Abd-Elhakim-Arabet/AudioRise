@@ -179,6 +179,25 @@ def _alias_for(stem_path: Path, tags: list[dict]) -> Path | None:
     return alias
 
 
+def label_path(path: str | Path, top_k: int = 2) -> dict:
+    """Tag a single stem `.wav` or every stem in a dir.
+
+    Single file → `{stem: tags}` + alias next to the file.
+    Directory → same as :func:`label_stems`.
+    """
+    p = Path(path)
+    if p.is_file():
+        if p.suffix.lower() != ".wav":
+            raise ValueError(f"not a .wav stem file: {p}")
+        tags = label_stem(p, top_k=top_k)
+        if tags:
+            _alias_for(p, tags)
+        return {p.stem: tags}
+    if p.is_dir():
+        return label_stems(p, top_k=top_k)
+    raise FileNotFoundError(f"stem file or dir not found: {p}")
+
+
 def label_stems(stems_dir: str | Path, top_k: int = 2) -> dict:
     """Tag every `*.wav` in a stems dir; update `stems.json`; make aliases.
 

@@ -29,9 +29,10 @@ Live status: **Increment 3 — `probe` + `separate` + `label` all live.**
 pip install -e packages/core -e packages/cli
 pip install -e "packages/core[separation]"   # once, for separate
 audiorise probe song.mp3
-audiorise separate song.mp3 --outdir stems/ --model htdemucs
-audiorise separate song.mp3 --outdir stems/ --label --top-k 2   # separate + tag
-audiorise label stems/ --top-k 2                               # tag existing stems
+audiorise separate song.mp3 --label          # → ./<song>-stems/ next to song.mp3
+audiorise separate song.mp3 --outdir stems/ --model htdemucs   # explicit dir
+audiorise label stems/                       # tag a stems dir
+audiorise label stems/other.wav              # tag one stem file
 ```
 
 `label` writes per-stem tags into `stems.json` (`labels: {other: [{label, score}]}`)
@@ -83,9 +84,11 @@ packages/mcp-server/              MCP server + per-client install scripts
 - [x] **Inc 3:** fine-grained labeling — numpy-only heuristic tags each stem
       (`other[flute,synth].wav` aliases + `stems.json` labels), silent stems skipped.
       `audiorise label` + `separate --label` live, verified on sine + Demucs stems.
-- [x] **Inc 4 (this):** MCP server (`probe_audio`, `separate_audio`, `label_stems`,
+- [x] **Inc 4:** MCP server (`probe_audio`, `separate_audio`, `label_stems`,
       `summarize_stems`) jailed to `AUDIORISE_MCP_ROOTS`, verified in-process
       (tool list + probe/summarize JSON + jail rejection).
+- [x] **Inc 5 (this):** `label` accepts one `.wav` or a dir; `separate` defaults to
+      `<song>-stems/` next to the input (e.g. `Premier-Night-stems/`).
 
 ## MCP server (`packages/mcp-server/`)
 

@@ -6,8 +6,8 @@ import argparse
 import json
 import sys
 
-from audio_engine import __version__, label_stems, probe_audio
-from audio_engine.separate import SeparationNotAvailable, separate
+from audio_engine import __version__, label_path, probe_audio
+from audio_engine.separate import SeparationNotAvailable, default_outdir, separate
 
 
 def _cmd_probe(args: argparse.Namespace) -> int:
@@ -53,7 +53,8 @@ def _cmd_separate(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print(f"wrote {len(result['stems'])} stems -> {args.outdir}/")
+        outdir = result["stems_json"].rsplit("/", 1)[0]
+        print(f"wrote {len(result['stems'])} stems -> {outdir}/")
         for s in result["stems"]:
             tags = ""
             if result.get("labels", {}).get(s["name"]):
@@ -67,8 +68,8 @@ def _cmd_separate(args: argparse.Namespace) -> int:
 
 def _cmd_label(args: argparse.Namespace) -> int:
     try:
-        labels = label_stems(args.stems_dir, top_k=args.top_k)
-    except FileNotFoundError as exc:
+        labels = label_path(args.path, top_k=args.top_k)
+    except (FileNotFoundError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if args.json:
@@ -92,7 +93,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("separate", help="split into stems locally (Demucs)")
     s.add_argument("input", help="audio file to separate")
-    s.add_argument("--outdir", default="stems", help="output dir (default: stems/)")
+    s.add_argument(
+        "--outdir",
+        default=None,
+        help="output dir (default: <input-dir>/<name>-stems, e.g. Premier-Night-stems/)",
+    )
     s.add_argument("--model", default="htdemucs", help="separator model (default: htdemucs)")
     s.add_argument("--device", default=None, help="cpu/cuda (default: auto)")
     s.add_argument("--label", action="store_true", help="also tag stems (Increment 3 heuristic)")
@@ -100,8 +105,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true", help="machine-readable output")
     s.set_defaults(func=_cmd_separate)
 
-    lb = sub.add_parser("label", help="tag stems in a dir (heuristic, best-effort)")
-    lb.add_argument("stems_dir", help="dir with vocals/drums/bass/other.wav (+ stems.json)")
+    lb = sub.add_parser("label", help="tag a stem .wav or a stems dir (best-effort)")
+    lb.add_argument("path", help="stem .wav file or dir with vocals/drums/bass/other.wav")
     lb.add_argument("--top-k", type=int, default=2, help="tags per stem (default: 2)")
     lb.add_argument("--json", action="store_true", help="machine-readable output")
     lb.set_defaults(func=_cmd_label)

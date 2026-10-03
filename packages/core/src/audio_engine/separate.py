@@ -15,12 +15,27 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 
 from .probe import probe_audio
 
 EXPECTED_STEMS = ("vocals", "drums", "bass", "other")
 TARGET_SR = 44100
+
+
+def slugify_stem(name: str) -> str:
+    """'Premier Night (live)' -> 'Premier-Night-live' (safe dir name)."""
+    slug = re.sub(r"[\s_]+", "-", name.strip())
+    slug = re.sub(r"[^A-Za-z0-9\-.]", "", slug)
+    slug = re.sub(r"-{2,}", "-", slug).strip("-")
+    return slug or "audio"
+
+
+def default_outdir(input_path: str | Path) -> Path:
+    """`<input-dir>/<slug>-stems`, e.g. `Premier-Night-stems`."""
+    src = Path(input_path)
+    return src.parent / f"{slugify_stem(src.stem)}-stems"
 
 
 class SeparationNotAvailable(RuntimeError):
@@ -102,7 +117,7 @@ def _save_wav(path: Path, wav, sr: int) -> None:
 
 def separate(
     input_path: str | Path,
-    outdir: str | Path = "stems",
+    outdir: str | Path | None = None,
     model: str = "htdemucs",
     device: str | None = None,
     label: bool = False,
@@ -114,7 +129,7 @@ def separate(
     src = Path(input_path)
     if not src.is_file():
         raise FileNotFoundError(f"audio file not found: {src}")
-    out = Path(outdir)
+    out = Path(outdir) if outdir is not None else default_outdir(src)
     out.mkdir(parents=True, exist_ok=True)
 
     if device is None:

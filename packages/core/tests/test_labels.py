@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from audio_engine.labels import extract_features, label_stem, label_stems
+from audio_engine.labels import extract_features, label_path, label_stem, label_stems
 
 
 def _tone(path: Path, freq: float = 440.0, seconds: float = 2.0):
@@ -66,3 +66,18 @@ def test_label_stems_writes_aliases_and_json(tmp_path):
     assert meta["labels"]["other"][0]["label"] == labels["other"][0]["label"]
     aliases = list(d.glob("other[*.wav"))
     assert len(aliases) == 1  # e.g. other[flute,synth].wav
+
+
+def test_label_path_single_file(tmp_path):
+    tone = _tone(tmp_path / "other.wav")
+    labels = label_path(tone, top_k=2)
+    assert set(labels) == {"other"}
+    assert len(labels["other"]) == 2
+    assert len(list(tmp_path.glob("other[*.wav"))) == 1
+
+
+def test_label_path_missing_raises(tmp_path):
+    import pytest
+
+    with pytest.raises(FileNotFoundError):
+        label_path(tmp_path / "nope.wav")

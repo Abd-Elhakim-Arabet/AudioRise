@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -49,3 +50,35 @@ def test_separate_contract_without_model(tmp_path, monkeypatch):
     meta = json.loads((outdir / "stems.json").read_text())
     assert meta["model"] == "htdemucs"
     assert "source" in meta and meta["source"]["sample_rate"] == 44100
+
+
+def test_default_outdir_named_after_input(tmp_path):
+    import importlib
+
+    sep = importlib.import_module("audio_engine.separate")
+    assert sep.slugify_stem("Premier Night") == "Premier-Night"
+    assert (
+        sep.default_outdir(tmp_path / "Premier Night.mp3")
+        == tmp_path / "Premier-Night-stems"
+    )
+
+
+def test_separate_default_outdir_without_model(tmp_path, monkeypatch):
+    pytest.importorskip("torch")
+    import importlib
+
+    import torch
+
+    sep = importlib.import_module("audio_engine.separate")
+
+    def fake_run(wav, model_name, device):
+        zeros = torch.zeros((2, wav.shape[-1]))
+        names = ["vocals", "drums", "bass", "other"]
+        return names, torch.stack([zeros.clone() for _ in names]), 44100
+
+    monkeypatch.setattr(sep, "_run_model", fake_run)
+
+    mix = _make_mix(tmp_path).rename(tmp_path / "My Song.wav")
+    result = sep.separate(mix, device="cpu")  # no outdir -> My-Song-stems
+    assert Path(result["stems_json"]).parent.name == "My-Song-stems"
+    assert (tmp_path / "My-Song-stems" / "vocals.wav").is_file()
