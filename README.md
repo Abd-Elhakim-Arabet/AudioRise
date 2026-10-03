@@ -13,37 +13,41 @@ Fine-grained labels (flute, piano, …) arrive in Increment 3 as best-effort
 tags on top of the 4–6 proven stems — true flute-vs-violin from a finished mix
 is unsolved, so we keep the proven stems and *label*, never invent, extra stems.
 
-Live status: **Increment 1 — skeleton + `probe` only.** `separate` is a stub that
-explains what Increment 2 will install.
+Live status: **Increment 2 — `probe` + `separate` (local Demucs) live.**
+Fine-grained labels land in Increment 3.
 
 ## Requirements
 
 - Python 3.10–3.14, `ffmpeg` + `ffprobe` on `PATH`
   (`brew install ffmpeg` on macOS, `sudo apt install ffmpeg` on Linux).
-- Increment 1 needs **no** third-party packages (stdlib only).
+- `probe` needs no third-party packages. `separate` needs:
+  `pip install -e packages/core[separation]` (torch + torchaudio + demucs + soundfile).
+  First run downloads the `htdemucs` model (~80 MB), then works fully offline.
 
-## Quick start (Increment 1)
+## Quick start (Increment 2)
 
 ```bash
 pip install -e packages/core -e packages/cli
+pip install -e "packages/core[separation]"   # once, for separate
 audiorise probe song.mp3
-audiorise probe song.mp3 --json
-audiorise separate song.mp3 --outdir stems/   # stub: prints Increment 2 roadmap
+audiorise separate song.mp3 --outdir stems/ --model htdemucs
+audiorise separate song.mp3 --outdir stems/ --device cpu --json
 ```
 
-### Python API (Increment 1)
+### Python API (Increment 2)
 
 ```python
-from audio_engine import probe_audio
+from audio_engine import probe_audio, separate
 info = probe_audio("song.mp3")
-print(info["duration_sec"], info["sample_rate"], info["channels"])
+result = separate("song.mp3", outdir="stems/", model="htdemucs")  # CPU auto
+print([(s["name"], s["rms_db"]) for s in result["stems"]])
 ```
 
 `info` keys: `path, format, duration_sec, sample_rate, channels, codec, bit_rate`.
 
 ## Output contract (stable from Increment 1)
 
-`separate()` (landing Increment 2) will write:
+`separate()` writes:
 
 ```
 stems/
@@ -67,9 +71,10 @@ docs/                             (stub, one file per increment)
 
 ## Roadmap (one increment per submit, no accumulation)
 
-- [x] **Inc 1 (this):** skeleton mirroring VectoRise, `probe`, CLI, README, tests.
-- [ ] **Inc 2:** local separation — PyTorch + Demucs `htdemucs` (4 stems), CPU, model
-      auto-download on first run, fully offline after. `audiorise separate` goes live.
+- [x] **Inc 1:** skeleton mirroring VectoRise, `probe`, CLI, README, tests.
+- [x] **Inc 2 (this):** local separation — PyTorch + Demucs `htdemucs` (4 stems),
+      CPU auto (`--device cpu/cuda`), model auto-download then offline.
+      `audiorise separate` live, verified on synth mix + CLI.
 - [ ] **Inc 3:** fine-grained labeling — classifier tags each stem
       (`other.wav` → `other[flute,piano].wav` style aliases + `stems.json`), best-effort.
 - [ ] **Inc 4:** MCP server (`probe_audio`, `separate_audio`) jailed to `AUDIORISE_MCP_ROOTS`.

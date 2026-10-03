@@ -1,4 +1,4 @@
-"""`audiorise` CLI — Increment 1: `probe` live, `separate` stub."""
+"""`audiorise` CLI — Increment 2: `probe` + `separate` (local Demucs) live."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import sys
 
 from audio_engine import __version__, probe_audio
-from audio_engine.separate import separate
+from audio_engine.separate import SeparationNotAvailable, separate
 
 
 def _cmd_probe(args: argparse.Namespace) -> int:
@@ -29,15 +29,29 @@ def _cmd_probe(args: argparse.Namespace) -> int:
 
 def _cmd_separate(args: argparse.Namespace) -> int:
     try:
-        separate(args.input, outdir=args.outdir, model=args.model)
-    except RuntimeError as exc:  # SeparationNotAvailable is a RuntimeError
-        print(f"not yet: {exc}", file=sys.stderr)
+        result = separate(
+            args.input, outdir=args.outdir, model=args.model, device=args.device
+        )
+    except SeparationNotAvailable as exc:
+        print(f"error: {exc}", file=sys.stderr)
         print(
-            "Hint: Increment 2 (`pip install torch torchaudio demucs`) "
-            "makes this command live. Nothing was written.",
+            "Install with: pip install -e packages/core[separation]",
             file=sys.stderr,
         )
         return 3
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # model download / OOM / corrupt file
+        print(f"separation failed: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"wrote {len(result['stems'])} stems -> {args.outdir}/")
+        for s in result["stems"]:
+            print(f"  {s['name']}.wav  {s['rms_db']} dB")
+        print(f"  {result['stems_json']}")
     return 0
 
 
@@ -51,10 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.set_defaults(func=_cmd_probe)
 
-    s = sub.add_parser("separate", help="split into stems (live in Increment 2)")
+    s = sub.add_parser("separate", help="split into stems locally (Demucs)")
     s.add_argument("input", help="audio file to separate")
     s.add_argument("--outdir", default="stems", help="output dir (default: stems/)")
     s.add_argument("--model", default="htdemucs", help="separator model (default: htdemucs)")
+    s.add_argument("--device", default=None, help="cpu/cuda (default: auto)")
+    s.add_argument("--json", action="store_true", help="machine-readable output")
     s.set_defaults(func=_cmd_separate)
     return ap
 

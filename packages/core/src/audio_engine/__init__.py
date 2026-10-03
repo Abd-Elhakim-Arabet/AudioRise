@@ -5,6 +5,7 @@ Increment 1: `probe_audio` is live (ffprobe, stdlib only).
 """
 
 from .probe import probe_audio
+from .separate import EXPECTED_STEMS, SeparationNotAvailable, separate
 
-__all__ = ["probe_audio", "__version__"]
-__version__ = "0.1.0"
+__all__ = ["probe_audio", "separate", "SeparationNotAvailable", "EXPECTED_STEMS", "__version__"]
+__version__ = "0.2.0"

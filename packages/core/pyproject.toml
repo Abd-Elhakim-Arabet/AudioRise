@@ -4,10 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "audiorise-core"
-version = "0.1.0"
-description = "AudioRise core engine: probe (live) + separate/labels (stubs until Inc 2/3)"
+version = "0.2.0"
+description = "AudioRise core engine: probe + local Demucs separation"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+
+[project.optional-dependencies]
+separation = ["torch", "torchaudio", "demucs", "soundfile"]
+test = ["pytest"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
